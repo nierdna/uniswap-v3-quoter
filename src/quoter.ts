@@ -16,14 +16,26 @@ import {
   MAX_TICK,
 } from './math';
 import type { PoolState } from './types';
+import type { StateFetcher } from './state';
 
 /**
  * Uniswap V3 Quoter implementation in TypeScript
  * Provides local quote calculations without on-chain calls
  */
 export class QuoterV3 {
+  private stateFetcher?: StateFetcher;
+
   /**
-   * Quote exact input for a single pool swap
+   * Initialize QuoterV3
+   *
+   * @param stateFetcher Optional StateFetcher for fetching pool states from blockchain
+   */
+  constructor(stateFetcher?: StateFetcher) {
+    this.stateFetcher = stateFetcher;
+  }
+
+  /**
+   * Quote exact input for a single pool swap (sync version with PoolState)
    *
    * @param poolState The pool state containing all necessary data
    * @param zeroForOne True if swapping token0 for token1, False otherwise
@@ -32,6 +44,77 @@ export class QuoterV3 {
    * @returns amountOut Expected output amount
    */
   quoteExactInputSingle(
+    poolState: PoolState,
+    zeroForOne: boolean,
+    amountIn: bigint,
+    sqrtPriceLimitX96?: bigint
+  ): bigint;
+
+  /**
+   * Quote exact input for a single pool swap (async version with pool address)
+   *
+   * @param poolAddress Pool address to fetch state for
+   * @param zeroForOne True if swapping token0 for token1
+   * @param amountIn Amount of input token
+   * @param sqrtPriceLimitX96 Price limit (0 for no limit)
+   * @returns Promise of expected output amount
+   */
+  quoteExactInputSingle(
+    poolAddress: string,
+    zeroForOne: boolean,
+    amountIn: bigint,
+    sqrtPriceLimitX96?: bigint
+  ): Promise<bigint>;
+
+  /**
+   * Implementation of quoteExactInputSingle (handles both sync and async)
+   */
+  quoteExactInputSingle(
+    poolStateOrAddress: PoolState | string,
+    zeroForOne: boolean,
+    amountIn: bigint,
+    sqrtPriceLimitX96?: bigint
+  ): bigint | Promise<bigint> {
+    // If string address provided, fetch state and return Promise
+    if (typeof poolStateOrAddress === 'string') {
+      return this.quoteExactInputSingleAsync(
+        poolStateOrAddress,
+        zeroForOne,
+        amountIn,
+        sqrtPriceLimitX96
+      );
+    }
+
+    // Otherwise use provided PoolState (sync)
+    return this.quoteExactInputSingleSync(
+      poolStateOrAddress,
+      zeroForOne,
+      amountIn,
+      sqrtPriceLimitX96
+    );
+  }
+
+  /**
+   * Async implementation - fetches pool state then quotes
+   */
+  private async quoteExactInputSingleAsync(
+    poolAddress: string,
+    zeroForOne: boolean,
+    amountIn: bigint,
+    sqrtPriceLimitX96?: bigint
+  ): Promise<bigint> {
+    if (!this.stateFetcher) {
+      throw new Error('StateFetcher required for address-based quotes. Pass StateFetcher to constructor.');
+    }
+
+    const poolState = await this.stateFetcher.fetchPoolState(poolAddress);
+    return this.quoteExactInputSingleSync(poolState, zeroForOne, amountIn, sqrtPriceLimitX96);
+  }
+
+  /**
+   * Sync implementation - quotes using provided pool state
+   */
+  private quoteExactInputSingleSync(
     poolState: PoolState,
     zeroForOne: boolean,
     amountIn: bigint,

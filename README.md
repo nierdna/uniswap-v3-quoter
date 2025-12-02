@@ -4,11 +4,18 @@ TypeScript implementation of Uniswap V3 QuoterV2 for local quote calculations wi
 
 ## Features
 
+### Phase 1 (Minimal) - ✅ Complete
 - ✅ **Local quote calculation**: Calculate swap quotes without RPC calls
 - ✅ **100% accurate**: Direct port from Solidity logic with BigInt precision
-- ✅ **Lightweight**: Minimal dependencies, Node.js only
+- ✅ **Lightweight**: Minimal dependencies
 - ✅ **Type-safe**: Full TypeScript with strict typing
 - ✅ **Well-tested**: Comprehensive test suite for math libraries
+
+### Phase 2 (State Fetching) - ✅ Complete
+- ✅ **Blockchain integration**: Fetch pool state from BSC using ethers.js
+- ✅ **Multicall3 batching**: Efficient state fetching (8 calls -> 1 call)
+- ✅ **State caching**: Cache pool states for better performance
+- ✅ **Auto-fetch**: Quote using just pool address
 
 ## Installation
 
@@ -48,6 +55,50 @@ const amountOut = quoter.quoteExactInputSingle(
 );
 
 console.log(`Amount out: ${amountOut}`);
+```
+
+## Phase 2: Fetch from Blockchain (New!)
+
+With Phase 2, you can now fetch pool state directly from BSC:
+
+```typescript
+import { ethers } from 'ethers';
+import { QuoterV3, StateFetcher, DEFAULT_RPC_URLS } from './src';
+
+// Connect to BSC
+const provider = new ethers.JsonRpcProvider(DEFAULT_RPC_URLS.BSC_MAINNET);
+
+// Create StateFetcher
+const stateFetcher = new StateFetcher(provider);
+
+// Create Quoter with StateFetcher
+const quoter = new QuoterV3(stateFetcher);
+
+// Quote using pool address (auto-fetch state!)
+const poolAddress = '0x36696169C63e42cd08ce11f5deeBbCeBae652050'; // USDT/WBNB
+const amountIn = 1000000000000000000n; // 1 WBNB
+
+const amountOut = await quoter.quoteExactInputSingle(
+  poolAddress,
+  false,  // WBNB -> USDT
+  amountIn
+);
+
+console.log(`Quote: ${amountIn} -> ${amountOut}`);
+```
+
+### Features
+
+- **Auto-fetch**: Just provide pool address, state is fetched automatically
+- **Caching**: Pool states are cached for subsequent quotes
+- **Multicall3**: Batches 8 RPC calls into 1 for efficiency
+- **Compatible**: Works with existing manual PoolState approach
+
+### Environment Variables
+
+```bash
+# Optional: Use custom RPC endpoint
+export BSC_RPC_URL=https://your-bsc-node.com
 ```
 
 ## Architecture
@@ -162,28 +213,38 @@ npm run test:watch
 - **No RPC calls**: All calculations done locally
 - **Memory efficient**: Only stores initialized ticks
 
-## Limitations (Minimal Version)
+## Limitations
 
-This is a minimal implementation focused on core quote functionality:
+### Phase 2 Current Status
 
-- ❌ **No state fetching**: Must provide `PoolState` manually
-- ❌ **No Multicall integration**: No on-chain data fetching
-- ❌ **No WebSocket support**: No real-time updates
+Implemented:
+- ✅ **State fetching**: Fetch from BSC blockchain
+- ✅ **Multicall integration**: Efficient batched calls
+- ✅ **State caching**: Cache for performance
+- ✅ **Single pool quotes**: Exact input swaps
+
+Not yet implemented (Future):
+- ❌ **No WebSocket support**: No real-time updates (Phase 3)
+- ❌ **No auto-refresh**: Manual update only (Phase 3)
 - ❌ **No multi-hop swaps**: Only single pool swaps
 - ❌ **No exact output quotes**: Only exact input implemented
 - ❌ **No browser support**: Node.js only
 
 ## Roadmap
 
-Future enhancements planned:
+### ✅ Phase 1 - Math & Quote Logic (Complete)
+- ✅ Port all math libraries from Solidity
+- ✅ Implement quote calculation logic
+- ✅ Comprehensive tests
+- ✅ Documentation
 
-### Phase 2 - State Fetching
-- [ ] Add ethers.js integration
-- [ ] Implement Multicall3 state fetching
-- [ ] Pool state caching
-- [ ] Auto-refresh mechanisms
+### ✅ Phase 2 - State Fetching (Complete)
+- ✅ Add ethers.js integration
+- ✅ Implement Multicall3 state fetching
+- ✅ Pool state caching
+- ✅ Integration tests
 
-### Phase 3 - Advanced Features
+### Phase 3 - Advanced Features (Next)
 - [ ] WebSocket real-time updates
 - [ ] Multi-hop swap quotes
 - [ ] Exact output quotes

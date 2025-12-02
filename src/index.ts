@@ -4,6 +4,7 @@
  */
 
 export { QuoterV3 } from './quoter';
+export { StateFetcher } from './state';
 export type { PoolState, TickInfo } from './types';
 export { createPoolState, createTickInfo } from './types';
 export {
@@ -14,4 +15,6 @@ export {
   getSqrtRatioAtTick,
   getTickAtSqrtRatio,
 } from './math';
+export * from './constants';
+export * from './utils';
 
