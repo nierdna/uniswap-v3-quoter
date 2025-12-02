@@ -54,8 +54,24 @@ export class StateFetcher implements IStateUpdater {
       // Create logger for WebSocket with same log level
       const wsLogger = createLogger('WS', { level: this.logger.getLevel() });
 
-      // Pass 'this' as IStateUpdater - breaks circular dependency via interface
-      this.wsSubscriber = new WebSocketSubscriber(wsConfig, this, wsLogger);
+      // Create WebSocketSubscriber (no direct coupling!)
+      this.wsSubscriber = new WebSocketSubscriber(wsConfig, wsLogger);
+
+      // Listen to events - complete decoupling via EventEmitter
+      this.wsSubscriber.on('swap', (swapData) => this.onSwapEvent(swapData));
+
+      // Optional: Listen to other events for monitoring
+      this.wsSubscriber.on('connected', (info) => {
+        this.logger.info(`WebSocket connected to chain ${info.chainId}`);
+      });
+
+      this.wsSubscriber.on('disconnected', (info) => {
+        this.logger.warn(`WebSocket disconnected: ${info.reason}`);
+      });
+
+      this.wsSubscriber.on('error', (error) => {
+        this.logger.error('WebSocket error:', error);
+      });
     }
   }
 

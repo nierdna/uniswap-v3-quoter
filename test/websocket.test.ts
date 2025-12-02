@@ -13,7 +13,6 @@ import {
   createSwapEventFilter,
   type SwapEventData,
 } from '../src/websocket';
-import type { IStateUpdater } from '../src/interfaces';
 import { BSC_ADDRESSES } from '../src/constants';
 
 // Skip WebSocket integration tests by default
@@ -98,13 +97,14 @@ describe('WebSocketSubscriber', () => {
       expect(subscriber).toBeTruthy();
     });
 
-    it('should accept state updater', () => {
-      const stateUpdater = {
-        onSwapEvent: jest.fn(),
-      };
-      const subscriber = new WebSocketSubscriber({ wssUrl: 'wss://example.com' }, stateUpdater);
+    it('should support event listeners', () => {
+      const subscriber = new WebSocketSubscriber({ wssUrl: 'wss://example.com' });
+
+      const mockListener = jest.fn();
+      subscriber.on('swap', mockListener);
 
       expect(subscriber).toBeTruthy();
+      expect(subscriber.listenerCount('swap')).toBe(1);
     });
   });
 
@@ -173,20 +173,18 @@ describe('WebSocketSubscriber', () => {
 
       const wssUrl = process.env.BSC_WSS_URL!;
 
-      // Create state updater mock
-      const stateUpdater: IStateUpdater = {
-        onSwapEvent: (swapData) => {
-          eventReceived = true;
-          receivedData = swapData;
-          console.log('[Test] Swap event received:', {
-            pool: swapData.poolAddress,
-            tick: swapData.tick,
-            liquidity: swapData.liquidity.toString(),
-          });
-        },
-      };
+      const subscriber = new WebSocketSubscriber({ wssUrl });
 
-      const subscriber = new WebSocketSubscriber({ wssUrl }, stateUpdater);
+      // Listen to swap events
+      subscriber.on('swap', (swapData) => {
+        eventReceived = true;
+        receivedData = swapData;
+        console.log('[Test] Swap event received:', {
+          pool: swapData.poolAddress,
+          tick: swapData.tick,
+          liquidity: swapData.liquidity.toString(),
+        });
+      });
 
       // Subscribe to active pool
       subscriber.subscribePool(BSC_ADDRESSES.USDT_WBNB_500);

@@ -9,16 +9,16 @@ import { parseSwapEvent, createSwapEventFilter } from './eventParser';
 import type { WebSocketConfig } from './types';
 import { DEFAULT_WS_CONFIG } from './types';
 import { createLogger, type ILogger, LogLevel } from '../utils/logger';
-import type { IStateUpdater } from '../interfaces/stateUpdater';
+import { TypedEventEmitter } from '../utils/typedEventEmitter';
+import type { WebSocketEvents } from './eventTypes';
 
 /**
  * WebSocket subscriber for pool Swap events
  * Provides real-time state updates with low latency
- * Depends on IStateUpdater interface (Dependency Inversion Principle)
+ * Uses EventEmitter pattern for complete decoupling
  */
-export class WebSocketSubscriber {
+export class WebSocketSubscriber extends TypedEventEmitter<WebSocketEvents> {
   private wssUrl: string;
-  private stateUpdater?: IStateUpdater;
   private provider?: ethers.WebSocketProvider;
   private subscribedPools: Set<string>;
   private running: boolean;
@@ -37,16 +37,12 @@ export class WebSocketSubscriber {
    * Initialize WebSocketSubscriber
    *
    * @param config WebSocket configuration
-   * @param stateUpdater Optional state updater implementing IStateUpdater interface
    * @param logger Optional logger instance
    */
-  constructor(
-    config: WebSocketConfig,
-    stateUpdater?: IStateUpdater,
-    logger?: ILogger
-  ) {
+  constructor(config: WebSocketConfig, logger?: ILogger) {
+    super(); // Initialize TypedEventEmitter
+
     this.wssUrl = config.wssUrl;
-    this.stateUpdater = stateUpdater;
     this.subscribedPools = new Set();
     this.running = false;
     this.reconnectCount = 0;
@@ -57,15 +53,6 @@ export class WebSocketSubscriber {
     this.reconnectMaxRetries = config.reconnectMaxRetries ?? DEFAULT_WS_CONFIG.reconnectMaxRetries;
     this.reconnectDelay = config.reconnectDelay ?? DEFAULT_WS_CONFIG.reconnectDelay;
     this.reconnectMaxDelay = config.reconnectMaxDelay ?? DEFAULT_WS_CONFIG.reconnectMaxDelay;
-  }
-
-  /**
-   * Set or update the state updater
-   *
-   * @param stateUpdater State updater to call when Swap event received
-   */
-  setStateUpdater(stateUpdater: IStateUpdater): void {
-    this.stateUpdater = stateUpdater;
   }
 
   /**
@@ -89,6 +76,9 @@ export class WebSocketSubscriber {
     }
 
     this.logger.info(`Added subscription for ${checksumAddress}`);
+
+    // Emit pool subscribed event
+    this.emit('poolSubscribed', checksumAddress);
   }
 
   /**
@@ -115,6 +105,9 @@ export class WebSocketSubscriber {
 
     this.subscribedPools.delete(lowerAddress);
     this.logger.info(`Unsubscribed from ${checksumAddress}`);
+
+    // Emit pool unsubscribed event
+    this.emit('poolUnsubscribed', checksumAddress);
   }
 
   /**
@@ -171,6 +164,13 @@ export class WebSocketSubscriber {
         const blockNumber = await this.provider.getBlockNumber();
         this.logger.info(`Connected! Network: ${network.name} (chainId: ${network.chainId}), Block: ${blockNumber}`);
 
+        // Emit connected event
+        this.emit('connected', {
+          chainId: network.chainId,
+          blockNumber,
+          network: network.name,
+        });
+
         // Reset reconnect counter on successful connection
         this.reconnectCount = 0;
 
@@ -185,7 +185,15 @@ export class WebSocketSubscriber {
 
       } catch (error) {
         this.logger.error('Connection error:', error);
+        this.emit('error', error as Error);
+
         await this.cleanup();
+
+        // Emit disconnected event
+        this.emit('disconnected', {
+          reason: (error as Error).message,
+          wasClean: false,
+        });
 
         // Handle reconnection if still running
         if (this.running) {
@@ -231,11 +239,13 @@ export class WebSocketSubscriber {
     try {
       const swapData = parseSwapEvent(log);
 
-      if (swapData && this.stateUpdater) {
-        this.stateUpdater.onSwapEvent(swapData);
+      if (swapData) {
+        // Emit swap event - listeners will handle it
+        this.emit('swap', swapData);
       }
     } catch (error) {
       this.logger.error('Error handling event:', error);
+      this.emit('parseError', error as Error, log);
     }
   }
 
@@ -265,6 +275,14 @@ export class WebSocketSubscriber {
     );
 
     this.logger.info(`Reconnecting in ${delay.toFixed(1)}s (attempt ${this.reconnectCount})...`);
+
+    // Emit reconnecting event
+    this.emit('reconnecting', {
+      attempt: this.reconnectCount,
+      delaySeconds: delay,
+      maxRetries: this.reconnectMaxRetries,
+    });
+
     await new Promise((resolve) => setTimeout(resolve, delay * 1000));
   }
 
