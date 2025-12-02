@@ -97,7 +97,7 @@ export function parseSwapEvent(log: ethers.Log): SwapEventData | null {
       timestamp: Date.now() / 1000, // Current timestamp
     };
   } catch (error) {
-    console.error('[EventParser] Failed to parse Swap event:', error);
+    // Silent fail for event parsing (logger would be injected if needed)
     return null;
   }
 }

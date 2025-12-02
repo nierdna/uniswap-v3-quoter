@@ -8,6 +8,7 @@ import { ethers } from 'ethers';
 import { parseSwapEvent, createSwapEventFilter } from './eventParser';
 import type { WebSocketConfig, SwapEventData } from './types';
 import { DEFAULT_WS_CONFIG } from './types';
+import { createLogger, type ILogger, LogLevel } from '../utils/logger';
 
 /**
  * WebSocket subscriber for pool Swap events
@@ -19,6 +20,7 @@ export class WebSocketSubscriber {
   private provider?: ethers.WebSocketProvider;
   private subscribedPools: Set<string>;
   private running: boolean;
+  private logger: ILogger;
 
   // Reconnection state
   private reconnectCount: number;
@@ -34,14 +36,20 @@ export class WebSocketSubscriber {
    *
    * @param config WebSocket configuration
    * @param callback Optional callback function called when Swap event received
+   * @param logger Optional logger instance
    */
-  constructor(config: WebSocketConfig, callback?: (data: SwapEventData) => void) {
+  constructor(
+    config: WebSocketConfig,
+    callback?: (data: SwapEventData) => void,
+    logger?: ILogger
+  ) {
     this.wssUrl = config.wssUrl;
     this.callback = callback;
     this.subscribedPools = new Set();
     this.running = false;
     this.reconnectCount = 0;
     this.eventListeners = new Map();
+    this.logger = logger || createLogger('WS', { level: LogLevel.INFO });
 
     // Set reconnection parameters
     this.reconnectMaxRetries = config.reconnectMaxRetries ?? DEFAULT_WS_CONFIG.reconnectMaxRetries;
@@ -67,7 +75,7 @@ export class WebSocketSubscriber {
     const checksumAddress = ethers.getAddress(poolAddress);
 
     if (this.subscribedPools.has(checksumAddress.toLowerCase())) {
-      console.log(`[WS] Already subscribed to ${checksumAddress}`);
+      this.logger.debug(`Already subscribed to ${checksumAddress}`);
       return;
     }
 
@@ -78,7 +86,7 @@ export class WebSocketSubscriber {
       this.subscribePoolInternal(checksumAddress);
     }
 
-    console.log(`[WS] Added subscription for ${checksumAddress}`);
+    this.logger.info(`Added subscription for ${checksumAddress}`);
   }
 
   /**
@@ -104,7 +112,7 @@ export class WebSocketSubscriber {
     }
 
     this.subscribedPools.delete(lowerAddress);
-    console.log(`[WS] Unsubscribed from ${checksumAddress}`);
+    this.logger.info(`Unsubscribed from ${checksumAddress}`);
   }
 
   /**
@@ -113,16 +121,16 @@ export class WebSocketSubscriber {
    */
   async start(): Promise<void> {
     if (this.running) {
-      console.log('[WS] Subscriber already running');
+      this.logger.warn('Subscriber already running');
       return;
     }
 
     this.running = true;
-    console.log(`[WS] Starting subscriber for ${this.subscribedPools.size} pool(s)`);
+    this.logger.info(`Starting subscriber for ${this.subscribedPools.size} pool(s)`);
 
     // Start connection loop in background (non-blocking)
     this.connectAndSubscribe().catch((error) => {
-      console.error('[WS] Background connection error:', error);
+      this.logger.error('Background connection error:', error);
     });
 
     // Wait a bit for initial connection
@@ -137,12 +145,12 @@ export class WebSocketSubscriber {
       return;
     }
 
-    console.log('[WS] Stopping subscriber...');
+    this.logger.info('Stopping subscriber...');
     this.running = false;
 
     await this.cleanup();
 
-    console.log('[WS] Subscriber stopped');
+    this.logger.info('Subscriber stopped');
   }
 
   /**
@@ -151,7 +159,7 @@ export class WebSocketSubscriber {
   private async connectAndSubscribe(): Promise<void> {
     while (this.running) {
       try {
-        console.log(`[WS] Connecting to ${this.wssUrl}...`);
+        this.logger.info(`Connecting to ${this.wssUrl}...`);
 
         // Create WebSocket provider
         this.provider = new ethers.WebSocketProvider(this.wssUrl);
@@ -159,7 +167,7 @@ export class WebSocketSubscriber {
         // Test connection
         const network = await this.provider.getNetwork();
         const blockNumber = await this.provider.getBlockNumber();
-        console.log(`[WS] Connected! Network: ${network.name} (chainId: ${network.chainId}), Block: ${blockNumber}`);
+        this.logger.info(`Connected! Network: ${network.name} (chainId: ${network.chainId}), Block: ${blockNumber}`);
 
         // Reset reconnect counter on successful connection
         this.reconnectCount = 0;
@@ -174,7 +182,7 @@ export class WebSocketSubscriber {
         await this.waitForDisconnect();
 
       } catch (error) {
-        console.error('[WS] Connection error:', error);
+        this.logger.error('Connection error:', error);
         await this.cleanup();
 
         // Handle reconnection if still running
@@ -192,7 +200,7 @@ export class WebSocketSubscriber {
    */
   private subscribePoolInternal(poolAddress: string): void {
     if (!this.provider) {
-      console.log(`[WS] Not connected, cannot subscribe to ${poolAddress}`);
+      this.logger.warn(`Not connected, cannot subscribe to ${poolAddress}`);
       return;
     }
 
@@ -209,7 +217,7 @@ export class WebSocketSubscriber {
     // Subscribe to events
     this.provider.on(filter, listener);
 
-    console.log(`[WS] ✓ Subscribed to ${poolAddress}`);
+    this.logger.info(`✓ Subscribed to ${poolAddress}`);
   }
 
   /**
@@ -225,7 +233,7 @@ export class WebSocketSubscriber {
         this.callback(swapData);
       }
     } catch (error) {
-      console.error('[WS] Error handling event:', error);
+      this.logger.error('Error handling event:', error);
     }
   }
 
@@ -241,8 +249,8 @@ export class WebSocketSubscriber {
 
     // Check max retries
     if (this.reconnectMaxRetries > 0 && this.reconnectCount > this.reconnectMaxRetries) {
-      console.log(
-        `[WS] Max reconnection attempts (${this.reconnectMaxRetries}) reached. Stopping.`
+      this.logger.warn(
+        `Max reconnection attempts (${this.reconnectMaxRetries}) reached. Stopping.`
       );
       this.running = false;
       return;
@@ -254,7 +262,7 @@ export class WebSocketSubscriber {
       this.reconnectMaxDelay
     );
 
-    console.log(`[WS] Reconnecting in ${delay.toFixed(1)}s (attempt ${this.reconnectCount})...`);
+    this.logger.info(`Reconnecting in ${delay.toFixed(1)}s (attempt ${this.reconnectCount})...`);
     await new Promise((resolve) => setTimeout(resolve, delay * 1000));
   }
 
@@ -270,7 +278,7 @@ export class WebSocketSubscriber {
       // ethers.js v6 WebSocketProvider emits events differently
       // Listen for provider destroy
       this.provider!.once('error', (error: Error) => {
-        console.error('[WS] Provider error:', error);
+        this.logger.error('Provider error:', error);
         resolve();
       });
 
@@ -278,7 +286,7 @@ export class WebSocketSubscriber {
       const checkInterval = setInterval(() => {
         if (!this.provider || this.provider.destroyed) {
           clearInterval(checkInterval);
-          console.log('[WS] Provider disconnected');
+          this.logger.info('Provider disconnected');
           resolve();
         }
       }, 1000);
@@ -304,7 +312,7 @@ export class WebSocketSubscriber {
         this.provider = undefined;
       }
     } catch (error) {
-      console.error('[WS] Cleanup error:', error);
+      this.logger.error('Cleanup error:', error);
     }
   }
 

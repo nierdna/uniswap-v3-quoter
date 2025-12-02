@@ -11,3 +11,13 @@ export {
   padHex,
 } from './encoding';
 
+export {
+  Logger,
+  SilentLogger,
+  createLogger,
+  getDefaultLogLevel,
+  LogLevel,
+  type ILogger,
+  type LoggerConfig,
+} from './logger';
+
