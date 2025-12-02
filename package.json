@@ -1,5 +1,5 @@
 {
-  "name": "uniswap-v3-quoter-ts",
+  "name": "uniswap-v3-quoter",
   "version": "0.3.0",
   "description": "TypeScript implementation of Uniswap V3 QuoterV2 with real-time WebSocket updates for BSC",
   "main": "dist/index.js",

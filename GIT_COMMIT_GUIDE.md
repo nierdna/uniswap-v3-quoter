@@ -217,8 +217,8 @@ git push origin v0.3.0
 
 ```bash
 # GitHub
-gh repo create uniswap-v3-quoter-ts --public
-git remote add origin https://github.com/YOUR_USERNAME/uniswap-v3-quoter-ts.git
+gh repo create uniswap-v3-quoter --public
+git remote add origin https://github.com/YOUR_USERNAME/uniswap-v3-quoter.git
 git branch -M main
 git push -u origin main
 git push --tags
