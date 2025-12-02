@@ -6,17 +6,19 @@
 
 import { ethers } from 'ethers';
 import { parseSwapEvent, createSwapEventFilter } from './eventParser';
-import type { WebSocketConfig, SwapEventData } from './types';
+import type { WebSocketConfig } from './types';
 import { DEFAULT_WS_CONFIG } from './types';
 import { createLogger, type ILogger, LogLevel } from '../utils/logger';
+import type { IStateUpdater } from '../interfaces/stateUpdater';
 
 /**
  * WebSocket subscriber for pool Swap events
  * Provides real-time state updates with low latency
+ * Depends on IStateUpdater interface (Dependency Inversion Principle)
  */
 export class WebSocketSubscriber {
   private wssUrl: string;
-  private callback?: (data: SwapEventData) => void;
+  private stateUpdater?: IStateUpdater;
   private provider?: ethers.WebSocketProvider;
   private subscribedPools: Set<string>;
   private running: boolean;
@@ -35,16 +37,16 @@ export class WebSocketSubscriber {
    * Initialize WebSocketSubscriber
    *
    * @param config WebSocket configuration
-   * @param callback Optional callback function called when Swap event received
+   * @param stateUpdater Optional state updater implementing IStateUpdater interface
    * @param logger Optional logger instance
    */
   constructor(
     config: WebSocketConfig,
-    callback?: (data: SwapEventData) => void,
+    stateUpdater?: IStateUpdater,
     logger?: ILogger
   ) {
     this.wssUrl = config.wssUrl;
-    this.callback = callback;
+    this.stateUpdater = stateUpdater;
     this.subscribedPools = new Set();
     this.running = false;
     this.reconnectCount = 0;
@@ -58,12 +60,12 @@ export class WebSocketSubscriber {
   }
 
   /**
-   * Set or update the callback function
+   * Set or update the state updater
    *
-   * @param callback Callback function to call when Swap event received
+   * @param stateUpdater State updater to call when Swap event received
    */
-  setCallback(callback: (data: SwapEventData) => void): void {
-    this.callback = callback;
+  setStateUpdater(stateUpdater: IStateUpdater): void {
+    this.stateUpdater = stateUpdater;
   }
 
   /**
@@ -229,8 +231,8 @@ export class WebSocketSubscriber {
     try {
       const swapData = parseSwapEvent(log);
 
-      if (swapData && this.callback) {
-        this.callback(swapData);
+      if (swapData && this.stateUpdater) {
+        this.stateUpdater.onSwapEvent(swapData);
       }
     } catch (error) {
       this.logger.error('Error handling event:', error);

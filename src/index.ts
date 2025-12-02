@@ -18,4 +18,6 @@ export {
 export * from './constants';
 export * from './utils';
 export * from './websocket';
+export * from './interfaces';
+export * from './errors';
 

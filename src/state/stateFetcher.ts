@@ -13,11 +13,13 @@ import { decodeSlot0Manual, int24ToSigned } from '../utils/encoding';
 import { createLogger, type ILogger, LogLevel } from '../utils/logger';
 import { WebSocketSubscriber } from '../websocket/wsSubscriber';
 import type { WebSocketConfig, SwapEventData } from '../websocket/types';
+import type { IStateUpdater } from '../interfaces/stateUpdater';
 
 /**
  * StateFetcher class for fetching and caching pool states from blockchain
+ * Implements IStateUpdater to receive WebSocket events without circular dependency
  */
-export class StateFetcher {
+export class StateFetcher implements IStateUpdater {
   private provider: ethers.Provider;
   private multicall: ethers.Contract;
   private poolInterface: ethers.Interface; // Cache interface
@@ -51,11 +53,9 @@ export class StateFetcher {
     if (wsConfig) {
       // Create logger for WebSocket with same log level
       const wsLogger = createLogger('WS', { level: this.logger.getLevel() });
-      this.wsSubscriber = new WebSocketSubscriber(
-        wsConfig,
-        (swapData) => this.onSwapEvent(swapData),
-        wsLogger
-      );
+
+      // Pass 'this' as IStateUpdater - breaks circular dependency via interface
+      this.wsSubscriber = new WebSocketSubscriber(wsConfig, this, wsLogger);
     }
   }
 
@@ -262,11 +262,12 @@ export class StateFetcher {
   }
 
   /**
-   * Callback when Swap event received from WebSocket
+   * Handle Swap event from WebSocket (implements IStateUpdater interface)
+   * This breaks circular dependency - WebSocketSubscriber depends on interface, not concrete class
    *
    * @param swapData Parsed Swap event data
    */
-  private onSwapEvent(swapData: SwapEventData): void {
+  onSwapEvent(swapData: SwapEventData): void {
     const poolState = this.poolCache.get(swapData.poolAddress);
 
     if (poolState) {
@@ -277,7 +278,7 @@ export class StateFetcher {
       poolState.lastUpdateBlock = swapData.blockNumber;
       poolState.lastUpdateTimestamp = swapData.timestamp;
 
-      this.logger.info(
+      this.logger.debug(
         `Pool ${swapData.poolAddress.slice(0, 10)}... updated (tick: ${swapData.tick}, liquidity: ${swapData.liquidity})`
       );
     }
