@@ -10,6 +10,8 @@ import { createPoolState } from '../types';
 import { POOL_ABI, MULTICALL3_ABI } from '../constants/abis';
 import { getMulticall3Address } from '../constants/addresses';
 import { decodeSlot0Manual, int24ToSigned } from '../utils/encoding';
+import { WebSocketSubscriber } from '../websocket/wsSubscriber';
+import type { WebSocketConfig, SwapEventData } from '../websocket/types';
 
 /**
  * StateFetcher class for fetching and caching pool states from blockchain
@@ -18,19 +20,28 @@ export class StateFetcher {
   private provider: ethers.Provider;
   private multicall: ethers.Contract;
   private poolCache: Map<string, PoolState>;
+  private wsSubscriber?: WebSocketSubscriber;
 
   /**
    * Initialize StateFetcher
    *
    * @param provider Ethers.js provider connected to BSC
    * @param multicallAddress Address of Multicall3 contract (defaults to BSC Multicall3)
+   * @param wsConfig Optional WebSocket configuration for real-time updates
    */
-  constructor(provider: ethers.Provider, multicallAddress?: string) {
+  constructor(provider: ethers.Provider, multicallAddress?: string, wsConfig?: WebSocketConfig) {
     this.provider = provider;
     this.poolCache = new Map();
 
     const multicallAddr = multicallAddress || getMulticall3Address();
     this.multicall = new ethers.Contract(multicallAddr, MULTICALL3_ABI, this.provider);
+
+    // Initialize WebSocket subscriber if config provided
+    if (wsConfig) {
+      this.wsSubscriber = new WebSocketSubscriber(wsConfig, (swapData) =>
+        this.onSwapEvent(swapData)
+      );
+    }
   }
 
   /**
@@ -127,7 +138,15 @@ export class StateFetcher {
     });
 
     // Cache the pool state
-    this.poolCache.set(checksumAddress.toLowerCase(), poolState);
+    const lowerAddress = checksumAddress.toLowerCase();
+    const isAlreadyCached = this.poolCache.has(lowerAddress);
+
+    this.poolCache.set(lowerAddress, poolState);
+
+    // Auto-subscribe to WebSocket if available (only if newly cached)
+    if (this.wsSubscriber && !isAlreadyCached) {
+      this.wsSubscriber.subscribePool(checksumAddress);
+    }
 
     return poolState;
   }
@@ -227,6 +246,65 @@ export class StateFetcher {
    */
   getCachedPoolAddresses(): string[] {
     return Array.from(this.poolCache.keys());
+  }
+
+  /**
+   * Callback when Swap event received from WebSocket
+   *
+   * @param swapData Parsed Swap event data
+   */
+  private onSwapEvent(swapData: SwapEventData): void {
+    const poolState = this.poolCache.get(swapData.poolAddress);
+
+    if (poolState) {
+      // Update state from event
+      poolState.sqrtPriceX96 = swapData.sqrtPriceX96;
+      poolState.liquidity = swapData.liquidity;
+      poolState.tick = swapData.tick;
+      poolState.lastUpdateBlock = swapData.blockNumber;
+      poolState.lastUpdateTimestamp = swapData.timestamp;
+
+      console.log(
+        `[WS] Pool ${swapData.poolAddress.slice(0, 10)}... updated (tick: ${swapData.tick}, liquidity: ${swapData.liquidity})`
+      );
+    }
+  }
+
+  /**
+   * Start WebSocket subscriber for real-time updates
+   * Requires WebSocket configuration to be provided during construction
+   */
+  async startWebSocket(): Promise<void> {
+    if (!this.wsSubscriber) {
+      throw new Error(
+        'WebSocket not configured. Pass wsConfig to StateFetcher constructor.'
+      );
+    }
+
+    await this.wsSubscriber.start();
+  }
+
+  /**
+   * Stop WebSocket subscriber
+   */
+  async stopWebSocket(): Promise<void> {
+    if (this.wsSubscriber) {
+      await this.wsSubscriber.stop();
+    }
+  }
+
+  /**
+   * Check if WebSocket is running
+   */
+  isWebSocketRunning(): boolean {
+    return this.wsSubscriber?.isRunning() ?? false;
+  }
+
+  /**
+   * Get WebSocket subscriber instance (if configured)
+   */
+  getWebSocketSubscriber(): WebSocketSubscriber | undefined {
+    return this.wsSubscriber;
   }
 }
 

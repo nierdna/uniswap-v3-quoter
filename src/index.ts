@@ -17,4 +17,5 @@ export {
 } from './math';
 export * from './constants';
 export * from './utils';
+export * from './websocket';
 

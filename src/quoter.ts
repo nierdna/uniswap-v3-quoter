@@ -96,6 +96,7 @@ export class QuoterV3 {
 
   /**
    * Async implementation - fetches pool state then quotes
+   * Checks cache first to avoid unnecessary fetches
    */
   private async quoteExactInputSingleAsync(
     poolAddress: string,
@@ -107,7 +108,14 @@ export class QuoterV3 {
       throw new Error('StateFetcher required for address-based quotes. Pass StateFetcher to constructor.');
     }
 
-    const poolState = await this.stateFetcher.fetchPoolState(poolAddress);
+    // Check cache first
+    let poolState = this.stateFetcher.getPoolState(poolAddress);
+
+    // Only fetch if not cached
+    if (!poolState) {
+      poolState = await this.stateFetcher.fetchPoolState(poolAddress);
+    }
+
     return this.quoteExactInputSingleSync(poolState, zeroForOne, amountIn, sqrtPriceLimitX96);
   }
 
